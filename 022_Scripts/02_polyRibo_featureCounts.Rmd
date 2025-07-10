@@ -1,0 +1,300 @@
+---
+title: "02_polyRibo_featureCounts"
+output: html_document
+---
+
+# 0 Environment
+## 0.1 Packages
+### 0.1.1 Installs
+```{r echo=F, message=F, warning=FALSE}
+# if (!requireNamespace("devtools", quietly = TRUE)) {
+#    install.packages("devtools")
+# }
+# devtools::install_github("Danko-Lab/BayesPrism/BayesPrism")
+```
+### 0.1.1 Library
+```{r echo=F, message=F, warning=FALSE}
+set.seed(123)
+library(tidyverse)
+library(openxlsx)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+```
+
+## 0.2 Paths
+```{r echo=F, message=FALSE, warning=FALSE}
+wDir <- paste0("~/gitClones/02_polyARibo/")
+dataDir <- paste0(wDir, "021_Data/")
+resDir <- paste0(wDir, "/023_Results/")
+plotDir <- paste0(wDir, "/024_Plots/")
+fprefix <- "02_polyARibo_featureCounts"
+```
+
+# 1 Data
+## 1.1 Gene-level
+### 1.1.1 Poly
+```{r message=FALSE}
+polya.dirs <- list.dirs(paste0(resDir, "02_polyRibo_featureCounts_polyOutput"))
+
+masterDf <- data.frame()
+
+for (pdir in polya.dirs){
+  if (pdir == "/Users/nv4/gitClones/02_polyARibo//023_Results/02_polyRibo_featureCounts_polyOutput"){
+    next
+  }
+  
+  tempName <- basename(pdir)
+  print(paste0("Running ", tempName))
+  
+  temp <- list.files(pdir, pattern=paste0("_s2.+polya.summary")) # filter on reads for genes (default), excluding files with summary. ".+" is an alternative to &. Will check -f option in next loop.
+  
+  if (length(temp)!=1){
+    print("Error with number of featureCounts results files, breaking loop.")
+    break
+  }
+  
+  tempDf <- read_table(paste0(pdir,"/", temp)) %>%
+    as.data.frame()
+  
+  colnames(tempDf) <- c(colnames(tempDf[1]), tempName)
+    
+  if (nrow(masterDf)==0){
+    masterDf <- tempDf 
+  }
+  else{
+    # Check columns match exactly (i.e. geneIds, positions, etc.)
+    # if(nrow()){
+    names <- c(colnames(masterDf), tempName)
+    masterDf <- cbind(masterDf, tempDf[,2])
+    names(masterDf) <- names
+    # }
+  }
+}
+
+masterPoly <- masterDf 
+```
+### 1.1.2 Ribo
+```{r message=FALSE}
+ribo.dirs <- list.dirs(paste0(resDir, "02_polyRibo_featureCounts_riboOutput"))
+
+masterDf <- data.frame()
+
+for (pdir in ribo.dirs){
+  if (pdir == "/Users/nv4/gitClones/02_polyARibo//023_Results/02_polyRibo_featureCounts_riboOutput"){
+    next
+  }
+  
+  tempName <- basename(pdir)
+  print(paste0("Running ", tempName))
+  
+  temp <- list.files(pdir, pattern=paste0("_s2.+ribo.summary")) # filter on reads for genes (default), excluding files with summary. ".+" is an alternative to &. Will check -f option in next loop.
+  
+  if (length(temp)!=1){
+    print("Error with number of featureCounts results files, breaking loop.")
+    break
+  }
+  
+  tempDf <- read_table(paste0(pdir,"/", temp)) %>%
+    as.data.frame()
+  
+  colnames(tempDf) <- c(colnames(tempDf[1]), tempName)
+    
+  if (nrow(masterDf)==0){
+    masterDf <- tempDf 
+  }
+  else{
+    # Check columns match exactly (i.e. geneIds, positions, etc.)
+    # if(nrow()){
+    names <- c(colnames(masterDf), tempName)
+    masterDf <- cbind(masterDf, tempDf[,2])
+    names(masterDf) <- names
+    # }
+  }
+}
+
+masterRibo <- masterDf 
+```
+
+### 1.1.3 Merge 
+```{r}
+masterMerge <- cbind(masterPoly, masterRibo %>% select(-c(Status))) %>%
+  filter(across(everything(), ~. != 0)) 
+```
+
+## 1.2 Exon-level
+### 1.2.1 Poly
+```{r message=FALSE}
+polya.dirs <- list.dirs(paste0(resDir, "02_polyRibo_featureCounts_polyOutput"))
+
+masterDf <- data.frame()
+
+for (pdir in polya.dirs){
+  if (pdir == "/Users/nv4/gitClones/02_polyARibo//023_Results/02_polyRibo_featureCounts_polyOutput"){
+    next
+  }
+  
+  tempName <- basename(pdir)
+  print(paste0("Running ", tempName))
+  
+  temp <- list.files(pdir, pattern=paste0("_fs2.+polya.summary")) # filter on reads for genes (default), excluding files with summary. ".+" is an alternative to &. Will check -f option in next loop.
+  
+  if (length(temp)!=1){
+    print("Error with number of featureCounts results files, breaking loop.")
+    break
+  }
+  
+  tempDf <- read_table(paste0(pdir,"/", temp)) %>%
+    as.data.frame()
+  
+  colnames(tempDf) <- c(colnames(tempDf[1]), tempName)
+    
+  if (nrow(masterDf)==0){
+    masterDf <- tempDf 
+  }
+  else{
+    # Check columns match exactly (i.e. geneIds, positions, etc.)
+    # if(nrow()){
+    names <- c(colnames(masterDf), tempName)
+    masterDf <- cbind(masterDf, tempDf[,2])
+    names(masterDf) <- names
+    # }
+  }
+}
+
+masterPolyF <- masterDf 
+```
+### 1.2.2 Ribo
+```{r message=FALSE}
+ribo.dirs <- list.dirs(paste0(resDir, "02_polyRibo_featureCounts_riboOutput"))
+
+masterDf <- data.frame()
+
+for (pdir in ribo.dirs){
+  if (pdir == "/Users/nv4/gitClones/02_polyARibo//023_Results/02_polyRibo_featureCounts_riboOutput"){
+    next
+  }
+  
+  tempName <- basename(pdir)
+  print(paste0("Running ", tempName))
+  
+  temp <- list.files(pdir, pattern=paste0("_fs2.+ribo.summary")) # filter on reads for genes (default), excluding files with summary. ".+" is an alternative to &. Will check -f option in next loop.
+  
+  if (length(temp)!=1){
+    print("Error with number of featureCounts results files, breaking loop.")
+    break
+  }
+  
+  tempDf <- read_table(paste0(pdir,"/", temp)) %>%
+    as.data.frame()
+  
+  colnames(tempDf) <- c(colnames(tempDf[1]), tempName)
+    
+  if (nrow(masterDf)==0){
+    masterDf <- tempDf 
+  }
+  else{
+    # Check columns match exactly (i.e. geneIds, positions, etc.)
+    # if(nrow()){
+    names <- c(colnames(masterDf), tempName)
+    masterDf <- cbind(masterDf, tempDf[,2])
+    names(masterDf) <- names
+    # }
+  }
+}
+
+masterRiboF <- masterDf 
+```
+
+### 1.2.3 Merge 
+```{r}
+masterMergeF <- cbind(masterPolyF, masterRiboF %>% select(-c(Status))) %>%
+  filter(across(everything(), ~. != 0)) 
+```
+
+# 2 Plot
+## 2.1 Gene level
+### 2.1.1 Facet wrap with sample names 
+```{r warning=FALSE, paged.print=FALSE}
+plotDf <- masterMerge %>%
+  pivot_longer(
+    cols = -Status,
+    names_to = "Sample",
+    values_to = "Count"
+  ) %>%
+  mutate(
+    sampleId = sub("\\.(polya|ribo)$", "", Sample),
+    libraryType = sub(".*\\.", "", Sample)
+  ) %>%
+  arrange(sampleId, libraryType) %>%
+  mutate(Sample = factor(Sample, levels = unique(Sample)), 
+         Status = factor(Status, levels = rev(unique(Status))))
+
+(bySample <- ggplot(plotDf, aes(x = Sample, y = Count, fill = Status)) +
+  geom_bar(stat = "identity") +
+  facet_grid(. ~ sampleId, scales = "free_x", space = "free_x") +  # groups samples
+  theme(strip.text = element_blank()) +
+  # theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title = "featureCounts Quantification (gene-level)",
+       x = "Sample",
+       y = "Read Count"))
+
+(byLib <- ggplot(plotDf, aes(x = Sample, y = Count, fill = Status)) +
+  geom_bar(stat = "identity") +
+  facet_grid(. ~ libraryType, scales = "free_x", space = "free_x") +  # groups samples
+  # theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title = "featureCounts Quantification (gene-level)",
+       x = "Sample",
+       y = "Read Pair Count"))
+
+pdf(paste0(plotDir, fprefix, "/bar/", fprefix, "_stackedBar_readCounts.pdf"), height=5, width=10)
+print(bySample)
+print(byLib)
+dev.off()
+```
+## 2.2 Exon level
+```{r warning=FALSE, paged.print=FALSE}
+plotDf <- masterMergeF %>%
+  pivot_longer(
+    cols = -Status,
+    names_to = "Sample",
+    values_to = "Count"
+  ) %>%
+  mutate(
+    sampleId = sub("\\.(polya|ribo)$", "", Sample),
+    libraryType = sub(".*\\.", "", Sample)
+  ) %>%
+  arrange(sampleId, libraryType) %>%
+  mutate(Sample = factor(Sample, levels = unique(Sample)), 
+         Status = factor(Status, levels = rev(unique(Status))))
+
+(bySample <- ggplot(plotDf, aes(x = Sample, y = Count, fill = Status)) +
+  geom_bar(stat = "identity") +
+  facet_grid(. ~ sampleId, scales = "free_x", space = "free_x") +  # groups samples
+  theme(strip.text = element_blank()) +
+  # theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title = "featureCounts Quantification (exon-level)",
+       x = "Sample",
+       y = "Read Count"))
+
+(byLib <- ggplot(plotDf, aes(x = Sample, y = Count, fill = Status)) +
+  geom_bar(stat = "identity") +
+  facet_grid(. ~ libraryType, scales = "free_x", space = "free_x") +  # groups samples
+  # theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title = "featureCounts Quantification (exon-level)",
+       x = "Sample",
+       y = "Read Pair Count"))
+
+pdf(paste0(plotDir, fprefix, "/bar/", fprefix, "_stackedBar_readCounts_f.pdf"), height=5, width=10)
+print(bySample)
+print(byLib)
+dev.off()
+```
+
+
+
+

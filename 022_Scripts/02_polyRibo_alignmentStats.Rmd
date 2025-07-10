@@ -1,0 +1,44 @@
+---
+title: "02_polyRibo_alignmentStats"
+output: html_document
+---
+
+I have run featureCounts on two CTVT samples to test what strandedness is most appropriate. In Maurine's work, -s reverse was used for HTSeq, equivalent to -s 2 in featureCounts.
+
+I am checking (1) alignment statistics using STAR (samtools flagstats) and (2) difference in strandedness parameter from featureCounts. 
+
+# 0 Environment
+## 0.1 Packages
+### 0.1.1 Installs
+```{r echo=F, message=F, warning=FALSE}
+# if (!requireNamespace("devtools", quietly = TRUE)) {
+#    install.packages("devtools")
+# }
+# devtools::install_github("Danko-Lab/BayesPrism/BayesPrism")
+```
+### 0.1.1 Library
+```{r echo=F, message=F, warning=FALSE}
+set.seed(123)
+library(tidyverse)
+library(openxlsx)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+```
+
+## 0.2 Paths
+```{r echo=F, message=FALSE, warning=FALSE}
+wDir <- paste0("~/gitClones/02_polyARibo/")
+dataDir <- paste0(wDir, "021_Data/")
+resDir <- paste0(wDir, "/023_Results/")
+plotDir <- paste0(wDir, "/024_Plots/")
+fprefix <- "02_polyARibo_alignmentStats"
+```
+
+# 1 Data
+## 
+```{r}
+
+```
+
+

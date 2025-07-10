@@ -1,0 +1,273 @@
+---
+title: "02_polyRibo_DESEQ"
+output: html_document
+---
+
+I have run featureCounts on all CTVT samples.
+Reading in counts to perform DEA. 
+
+# 0 Environment
+## 0.1 Packages
+### 0.1.1 Installs
+```{r echo=F, message=F, warning=FALSE}
+# BiocManager::install("apeglm")
+# library(devtools)
+# install_github("stephens999/ashr")
+# install.packages("DGEobj")
+# install.packages("DGEobj.utils")
+# BiocManager::install("sva")
+# install.packages("factoextra")
+# BiocManager::install("txdbmaker")
+```
+### 0.1.1 Library
+```{r echo=F, message=F, warning=FALSE}
+set.seed(123)
+library(tidyverse)
+library(GenomicFeatures)
+library(GenomicRanges)
+library(reshape2)
+library(txdbmaker)
+setClassUnion("ExpData", c("matrix", "SummarizedExperiment"))
+```
+
+## 0.2 Paths
+```{r echo=F, message=FALSE, warning=FALSE}
+wDir <- paste0("~/gitClones/02_polyARibo/")
+dataDir <- paste0(wDir, "021_Data/")
+resDir <- paste0(wDir, "/023_Results/")
+plotDir <- paste0(wDir, "/024_Plots/")
+fprefix <- "02_polyARibo_DESEQ"
+```
+
+# 1 Data
+## 1.1 Read counts matrix
+```{r}
+masterMat <- read.xlsx(paste0(resDir, "/", fprefix, "/", fprefix, "_masterMat.xlsx"), 
+                       rowNames = T)
+fprefix <- "02_polyARibo_TPM"
+
+counts <- data.matrix(masterMat)
+```
+
+## 1.2 Sample info
+Reading in from Kevin's file. 
+The rows in the colData must match the columns of our counts matrix.
+```{r}
+fromKevin <- read_table(paste0(dataDir, "samples_with_seq_data.tsv"))
+
+coldata <- fromKevin %>%
+  as.data.frame() %>%
+  mutate(reference=tolower(reference), 
+         Sample = paste0(supplier, ".",reference)) %>%
+  column_to_rownames("Sample")
+
+head(coldata)
+coldata$reference <- factor(coldata$reference)
+coldata$supplier <- factor(coldata$supplier)
+```
+## 1.3 Read gtf file
+Load gene lengths or GTF for exon lengths
+```{r}
+gtf <- rtracklayer::import(paste0(dataDir, "Canis_lupus_familiaris.CanFam3.1.104.gtf"))
+```
+
+# 2 TPM
+## 2.1 Extract gene lengths
+```{r}
+# Extract gene lengths from GTF
+txdb <- makeTxDbFromGFF(paste0(dataDir, "Canis_lupus_familiaris.CanFam3.1.104.gtf"))
+exons_list_per_gene <- exonsBy(txdb, by = "gene")
+gene_lengths <- sum(width(reduce(exons_list_per_gene)))
+
+# Ensure order matches counts
+gene_lengths <- gene_lengths[names(gene_lengths) %in% rownames(counts)]
+counts <- counts[rownames(counts) %in% names(gene_lengths), ]
+
+# TPM conversion
+counts_tpm <- apply(counts, 2, function(x) {
+  rpk <- x / (gene_lengths[rownames(counts)] / 1000)
+  tpm <- rpk / sum(rpk) * 1e6
+  return(tpm)
+})
+```
+
+## 2.2 Example housekeeping gene
+### 2.2.1 Filter gene by name
+GAPDH - 
+```{r}
+goi <- "GAPDH"
+goiDf <- gtf@elementMetadata@listData %>%
+  as.data.frame() %>%
+  filter(gene_name == goi)
+ensemblGoi <- unique(goiDf$gene_id)
+```
+
+### 2.2.2 TPM accross exons
+```{r}
+
+```
+
+### 2.2.3 TPM along gene body, assuming TPM is uniformly distributed. 
+Although this is exactly what we don't want to assume?
+```{r}
+# a = fs2 file from feature counts (counts per exon)
+df_gene <- a %>%
+  filter(gene_id == ensemblGoi)
+
+# 2. TPM normalization per sample
+# TPM = (exon_count / exon_length) / sum(all (exon_count / exon_length)) * 1e6
+
+df_gene$rate <- df_gene$Length * 1.0
+df_gene$tpm_factor <- df_gene$Length / sum(df_gene$Length)
+df_gene$TPM <- (df_gene$`/lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/021_Data/fromKevin/data/polya//2169Ta.polya.bam` / df_gene$Length)
+df_gene$TPM <- df_gene$TPM / sum(df_gene$TPM) * 1e6
+df_gene$rawCounts <- df_gene$`/lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/021_Data/fromKevin/data/polya//2169Ta.polya.bam`
+if (unique(df_gene$Strand) == "-") {
+  df_gene <- df_gene[order(df_gene$Start, decreasing = TRUE), ]
+}
+
+
+
+# ggplot(df_gene, aes(x = Start, y = TPM)) +
+#   geom_bar(stat = "identity", fill = "steelblue") +
+#   labs(
+#     title = paste("Exon-level TPM for", unique(df_gene$gene_id)),
+#     x = "Exon Start",
+#     y = "TPM"
+#   ) +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+polya <- ggplot(df_gene) +
+  # Horizontal lines from start to end at height = TPM
+  geom_segment(aes(x = Start, xend = End, y = TPM, yend = TPM), size = 1.5, color = "steelblue") +
+  
+  # Optional: vertical line from 0 to TPM at the center of exon
+  geom_segment(aes(x = (Start + End) / 2, xend = (Start + End) / 2, y = 0, yend = TPM), linetype = "dotted", color = "gray50") +
+  
+  # Optional: dot at center
+  geom_point(aes(x = (Start + End) / 2, y = TPM), size = 1, color = "darkblue") +
+
+  labs(
+    title = paste("Exon-level TPM\n(", unique(df_gene$gene_id), " / ", goi, ")", sep = ""),
+    x = "Coordinate (5' to 3')",
+    y = "TPM"
+  ) +
+  theme_minimal()
+
+polyaRaw <- ggplot(df_gene) +
+  # Horizontal lines from start to end at height = rawCounts
+  geom_segment(aes(x = Start, xend = End, y = rawCounts, yend = rawCounts), size = 1.5, color = "steelblue") +
+  
+  # Optional: vertical line from 0 to rawCounts at the center of exon
+  geom_segment(aes(x = (Start + End) / 2, xend = (Start + End) / 2, y = 0, yend = rawCounts), linetype = "dotted", color = "gray50") +
+  
+  # Optional: dot at center
+  geom_point(aes(x = (Start + End) / 2, y = rawCounts), size = 1, color = "darkblue") +
+
+  labs(
+    title = paste("Exon-level Raw Counts\n(", unique(df_gene$gene_id), " / ", goi, ")", sep = ""),
+    x = "Coordinate (5' to 3')",
+    y = "Raw counts"
+  ) +
+  theme_minimal()
+```
+
+### 2.2.3 TPM along gene body, assuming TPM is uniformly distributed. 
+Although this is exactly what we don't want to assume?
+```{r}
+# a = fs2 file from feature counts (counts per exon)
+c <- read_table("~/gitClones/02_polyARibo/023_Results/02_polyRibo_featureCounts_riboOutput/2169Ta.ribo/02_polyRibo_featureCounts_fs2_2169Ta.ribo", skip=1)
+
+df_gene <- c %>%
+  filter(Geneid == ensemblGoi)
+
+# 2. TPM normalization per sample
+# TPM = (exon_count / exon_length) / sum(all (exon_count / exon_length)) * 1e6
+
+df_gene$rate <- df_gene$Length * 1.0
+df_gene$tpm_factor <- df_gene$Length / sum(df_gene$Length)
+df_gene$TPM <- (df_gene$`/lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/021_Data/fromKevin/data/ribo//2169Ta.ribo.bam` / df_gene$Length)
+df_gene$TPM <- df_gene$TPM / sum(df_gene$TPM) * 1e6
+df_gene$rawCounts <- df_gene$`/lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/021_Data/fromKevin/data/polya//2169Ta.polya.bam`
+if (unique(df_gene$Strand) == "-") {
+  df_gene <- df_gene[order(df_gene$Start, decreasing = TRUE), ]
+}
+
+
+
+# ggplot(df_gene, aes(x = Start, y = TPM)) +
+#   geom_bar(stat = "identity", fill = "steelblue") +
+#   labs(
+#     title = paste("Exon-level TPM for", unique(df_gene$gene_id)),
+#     x = "Exon Start",
+#     y = "TPM"
+#   ) +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ribo <- ggplot(df_gene) +
+  # Horizontal lines from start to end at height = TPM
+  geom_segment(aes(x = Start, xend = End, y = TPM, yend = TPM), size = 1.5, color = "salmon") +
+  
+  # Optional: vertical line from 0 to TPM at the center of exon
+  geom_segment(aes(x = (Start + End) / 2, xend = (Start + End) / 2, y = 0, yend = TPM), linetype = "dotted", color = "gray50") +
+  
+  # Optional: dot at center
+  geom_point(aes(x = (Start + End) / 2, y = TPM), size = 1, color = "firebrick3") +
+
+  labs(
+    title = paste("Exon-level TPM\n(", unique(df_gene$Geneid), " / ", goi, ")", sep = ""),
+    x = "Coordinate (5' to 3')",
+    y = "TPM"
+  ) +
+  theme_minimal()
+
+riboRaw <- ggplot(df_gene) +
+  # Horizontal lines from start to end at height = rawCounts
+  geom_segment(aes(x = Start, xend = End, y = rawCounts, yend = rawCounts), size = 1.5, color = "salmon") +
+  
+  # Optional: vertical line from 0 to rawCounts at the center of exon
+  geom_segment(aes(x = (Start + End) / 2, xend = (Start + End) / 2, y = 0, yend = rawCounts), linetype = "dotted", color = "gray50") +
+  
+  # Optional: dot at center
+  geom_point(aes(x = (Start + End) / 2, y = rawCounts), size = 1, color = "firebrick3") +
+
+  labs(
+    title = paste("Exon-level Raw Counts\n(", unique(df_gene$Geneid), " / ", goi, ")", sep = ""),
+    x = "Coordinate (5' to 3')",
+    y = "Raw counts"
+  ) +
+  theme_minimal()
+
+
+polya + ribo
+```
+
+
+# 3 Subset bed for housekeeping gene
+Want to subset gtf from ensembl --> bed12 for RSEQC. 
+```{r}
+goiGtf <- gtf[mcols(gtf)$gene_id == ensemblGoi]
+export(goiGtf, paste0(dataDir, fprefix, "_", ensemblGoi, ".gtf"))
+txdb <- makeTxDbFromGFF(paste0(dataDir, fprefix, "_", ensemblGoi, ".gtf"), format = "gtf")
+transcripts <- transcriptsBy(txdb, by = "gene")
+gr <- unlist(transcripts)
+exons <- exonsBy(txdb, by = "tx", use.names = TRUE)
+
+
+
+goiGtfExons <- goiGtf[goiGtf$type=="exon"]
+export(goiGtfExons, paste0(dataDir, fprefix, "_", ensemblGoi, "_exons.gtf"))
+```
+
+
+# 4 https://omicstutorials.com/calculating-tpm-from-featurecounts-output/#Step_3_Load_the_Data_in_R
+```{r}
+
+```
+
+
+
+
+

@@ -1,0 +1,869 @@
+---
+title: "02_polyRibo_DESEQ_fOutput"
+output: html_document
+---
+
+I have run featureCounts on all CTVT samples.
+Reading in counts to perform DEA. 
+
+# 0 Environment
+## 0.1 Packages
+### 0.1.1 Installs
+```{r echo=F, message=F, warning=FALSE}
+# BiocManager::install("apeglm")
+# library(devtools)
+# install_github("stephens999/ashr")
+# install.packages("DGEobj")
+# install.packages("DGEobj.utils")
+# BiocManager::install("sva")
+# install.packages("factoextra")
+```
+### 0.1.1 Library
+```{r echo=F, message=F, warning=FALSE}
+set.seed(123)
+library(tidyverse)
+library(openxlsx)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(DESeq2)
+library(apeglm)
+library(ashr)
+library(pheatmap)
+library("RColorBrewer")
+# library(DGEobj)
+# library(DGEobj.utils)
+library(sva)
+library(factoextra)
+# setClassUnion("ExpData", c("matrix", "SummarizedExperiment"))
+```
+
+## 0.2 Paths
+```{r echo=F, message=FALSE, warning=FALSE}
+wDir <- paste0("~/gitClones/02_polyARibo/")
+dataDir <- paste0(wDir, "021_Data/")
+resDir <- paste0(wDir, "/023_Results/")
+plotDir <- paste0(wDir, "/024_Plots/")
+fprefix <- "02_polyARibo_DESEQ_fOutput"
+```
+
+# 1 Data
+## 1.1 Gene level
+## 1.2 Exon level
+### 1.1.1 PolyA
+```{r message=FALSE}
+polya.dirs <- list.dirs(paste0(resDir, "02_polyRibo_featureCounts_polyOutput"))
+
+masterDf <- data.frame()
+
+for (pdir in polya.dirs){
+  if (pdir == "/Users/nv4/gitClones/02_polyARibo//023_Results/02_polyRibo_featureCounts_polyOutput"){
+    next
+  }
+
+  tempName <- basename(pdir)
+  print(paste0("Running ", tempName))
+
+  temp <- list.files(pdir, pattern=paste0("_fs2.+polya$")) # filter on reads for genes (default), excluding files with summary. ".+" is an alternative to &. Will check -f option in next loop.
+
+  if (length(temp)!=1){
+    print("Error with number of featureCounts results files, breaking loop.")
+    break
+  }
+
+  tempDf <- read_table(paste0(pdir,"/", temp), skip = 1) %>%
+    as.data.frame()
+  colnames(tempDf) <- c(colnames(tempDf[1:7]), tempName)
+
+  if (nrow(masterDf)==0){
+    masterDf <- tempDf
+  }
+  else{
+    # Check columns match exactly (i.e. geneIds, positions, etc.)
+    if(all_equal(masterDf[,1:7], tempDf[,1:7])){
+      masterDf <- cbind(masterDf, tempDf[8])
+    }
+    else{
+      print("Cannot merge featureCounts with masterDf, check results.")
+      break
+    }
+  }
+}
+
+# write.xlsx(masterDf, paste0(resDir, "/", fprefix, "/", fprefix, "_masterDf_poly.xlsx"))
+
+masterMatPoly <- masterDf %>%
+  group_by(Geneid) %>%
+  arrange(Start, .by_group = TRUE) %>%
+  mutate(Exon_index = row_number(),
+         Exonid = paste0(Geneid, "_", Exon_index)) %>%
+  ungroup() %>%
+  select(-c(Chr, Start, End, Strand, Length, gene_id, Exon_index, Geneid)) %>%
+  column_to_rownames("Exonid")
+
+``` 
+### 1.1.2 Ribo
+Of note, this does not have the duplicated "gene_id" column (but does have Geneid)
+```{r message=FALSE}
+ribo.dirs <- list.dirs(paste0(resDir, "02_polyRibo_featureCounts_riboOutput"))
+
+masterDf <- data.frame()
+
+for (pdir in ribo.dirs){
+  if (pdir == "/Users/nv4/gitClones/02_polyARibo//023_Results/02_polyRibo_featureCounts_riboOutput"){
+    next
+  }
+
+  tempName <- basename(pdir)
+  print(paste0("Running ", tempName))
+
+  temp <- list.files(pdir, pattern=paste0("_fs2.+ribo$")) # filter on reads for genes (default), excluding files with summary. ".+" is an alternative to &. Will check -f option in next loop.
+
+  if (length(temp)!=1){
+    print("Error with number of featureCounts results files, breaking loop.")
+    break
+  }
+
+  tempDf <- read_table(paste0(pdir,"/", temp), skip = 1) %>%
+    as.data.frame()
+
+  colnames(tempDf) <- c(colnames(tempDf[1:6]), tempName)
+
+  if (nrow(masterDf)==0){
+    masterDf <- tempDf
+  }
+  else{
+    # Check columns match exactly (i.e. geneIds, positions, etc.)
+    if(all_equal(masterDf[,1:6], tempDf[,1:6])){
+      masterDf <- cbind(masterDf, tempDf[7])
+    }
+    else{
+      print("Cannot merge featureCounts with masterDf, check results.")
+      break
+    }
+  }
+}
+
+# write.xlsx(masterDf, paste0(resDir, "/", fprefix, "/", fprefix, "_masterDf_ribo.xlsx"))
+masterCheck <- masterDf %>%
+  dplyr::select(-c("Chr", "Start", "End", "Strand", "Length")) %>%
+  drop_na()
+
+masterMatRibo <- masterDf %>%
+  group_by(Geneid) %>%
+  arrange(Start, .by_group = TRUE) %>%
+  mutate(Exon_index = row_number(),
+         Exonid = paste0(Geneid, "_", Exon_index)) %>%
+  ungroup() %>%
+  select(-c(Chr, Start, End, Strand, Length, Exon_index, Geneid)) %>%
+  column_to_rownames("Exonid")
+``` 
+### 1.2.3 Merge matrices
+```{r}
+masterMat <- cbind(masterMatPoly,
+                   masterMatRibo)
+write.xlsx(masterMat, paste0(resDir, "/", fprefix, "/", fprefix, "_masterMat_.xlsx"),
+           rowNames = T)
+
+masterMat <- read.xlsx(paste0(resDir, "/", fprefix, "/", fprefix, "_masterMat_noRownames.xlsx"), 
+                       rowNames = T)
+```
+
+### 1.3 Sample info
+Reading in from Kevin's file. 
+The rows in the colData must match the columns of our counts matrix.
+```{r}
+fromKevin <- read_table(paste0(dataDir, "samples_with_seq_data.tsv"))
+
+coldata <- fromKevin %>%
+  as.data.frame() %>%
+  mutate(reference=tolower(reference), 
+         Sample = paste0(supplier, ".",reference)) %>%
+  column_to_rownames("Sample") %>%
+  rename("supplier"="sampleId",
+         "reference"="library")
+  
+
+head(coldata)
+coldata$library <- factor(coldata$library)
+coldata$sampleId <- factor(coldata$sampleId)
+```
+
+# 2 DESEQ
+## 2.1 Reorder coldata to match counts matrix 
+```{r}
+all(rownames(coldata) %in% colnames(masterMat))
+all(colnames(masterMat) %in% rownames(coldata))
+
+cts <- masterMat[, rownames(coldata)]
+all(rownames(coldata) == colnames(cts))
+```
+
+## 2.2 Initiate DESeqDataSet
+30,951 genes
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ 1)
+dds <- estimateSizeFactors(dds)
+normalizedCounts <- counts(dds, normalized=TRUE)
+head(normalizedCounts)
+
+
+
+ddsLib <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ library)
+ddsLib <- estimateSizeFactors(ddsLib)
+normalizedCountsLib <- counts(ddsLib, normalized=TRUE)
+head(normalizedCounts)
+
+
+
+
+ddsSampLib <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ library + sampleId)
+
+ddsSampLib <- estimateSizeFactors(ddsSampLib)
+
+normalizedCountsSampLib <- counts(ddsSampLib, normalized=TRUE)
+head(normalizedCountsSampLib)
+```
+
+## 2.3 Pre-filtering
+### 2.3.1 Number of reads per sample
+```{r}
+colSums(counts(dds)) %>% barplot
+colSums(counts(ddsLib)) %>% barplot
+colSums(counts(ddsSampLib)) %>% barplot
+
+colSums(normalizedCounts) %>% barplot
+colSums(normalizedCountsLib) %>% barplot
+colSums(normalizedCountsSampLib) %>% barplot
+
+plotDf <- data.frame(
+  Sample = colnames(normalizedCountsSampLib),
+  TotalCounts = colSums(normalizedCountsSampLib)
+) %>%
+  mutate(
+    sampleId = sub("\\.(polya|ribo)$", "", Sample),
+    libraryType = sub(".*\\.", "", Sample)
+  ) %>%
+  arrange(sampleId, libraryType) %>%
+  mutate(Sample = factor(Sample, levels = unique(Sample)))
+
+(bySample <- ggplot(plotDf, aes(x = Sample, y = TotalCounts, fill = libraryType)) +
+  geom_bar(stat = "identity") +
+  facet_grid(. ~ sampleId, scales = "free_x", space = "free_x") +
+  theme(strip.text = element_blank()) +
+  # theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title = "DESEQ2 Normalized Counts",
+       x = "Sample",
+       y = "Read Count"))
+
+(byLib <- ggplot(plotDf, aes(x = Sample, y = TotalCounts, fill = libraryType)) +
+  geom_bar(stat = "identity") +
+  facet_grid(. ~ libraryType, scales = "free_x", space = "free_x") +
+  theme(strip.text = element_blank()) +
+  # theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(title = "DESEQ2 Normalized Counts",
+       x = "Sample",
+       y = "Read Count"))
+
+pdf(paste0(plotDir, fprefix, "/bar/", fprefix, "_stackedBar_readCounts.pdf"), height=5, width=10)
+print(bySample)
+print(byLib)
+dev.off()
+
+```
+### 2.3.2 Remove lowly expressed genes
+Default params: min count of a gene is 10 in at least 3 samples. 
+21,883 genes remaining. 
+```{r}
+smallestGroupSize <- 3
+keep <- rowSums(counts(dds) >= 10) >= smallestGroupSize
+dds <- dds[keep,]
+colSums(counts(dds)) %>% barplot
+```
+
+## 2.4 Relevel
+We are interested in ribo (control) vs poly (treatment). Files will be named treatment vs control.
+```{r}
+dds$reference <- factor(dds$reference, levels = c("ribo","polya"))
+```
+
+# 3 DEA
+## 3.1 Run DESeq
+```{r}
+dds <- DESeq(dds)
+res <- results(dds)
+res
+
+ddsSupplier <- DESeq(ddsSupplier)
+res <- results(ddsSupplier)
+res
+```
+## 3.2 LFC shrinkage
+### 3.2.1 Run shrinkage
+Ranking of genes by "effect size" and visualization of log-fold changes. 
+As the p-values become less as the number of samples increases, the estimated effect sze becomes more precise. 
+Normal = prior Normal distribution
+Apeglm = adaptive t prior shrinkage estimator
+
+```{r}
+resultsNames(dds)
+resLFC <- lfcShrink(dds, coef="reference_polya_vs_ribo", type="apeglm")
+resNorm <- lfcShrink(dds, coef="reference_polya_vs_ribo", type="normal")
+resAsh <- lfcShrink(dds, coef="reference_polya_vs_ribo", type="ashr")
+```
+
+#### 3.2.2 Plot
+```{r}
+par(mfrow=c(2,2), mar=c(4,4,1,1))
+xlim <- c(1,1e5); ylim <- c(-3,3)
+plotMA(res, xlim=xlim, ylim=ylim, main="None")
+plotMA(resLFC, xlim=xlim, ylim=ylim, main="apeglm")
+plotMA(resNorm, xlim=xlim, ylim=ylim, main="normal")
+plotMA(resAsh, xlim=xlim, ylim=ylim, main="ashr")
+```
+
+## 3.3 Plot counts
+```{r}
+d <- plotCounts(dds, gene=which.min(res$padj), intgroup="reference", 
+                returnData=TRUE)
+
+range(d$count)
+
+ggplot(d, aes(x=reference, y=count)) + 
+  geom_point(position=position_jitter(w=0.1,h=0)) + 
+  scale_y_log10()
+
+
+d <- plotCounts(ddsSupplier, gene=which.min(res$padj), intgroup="reference", 
+                returnData=TRUE)
+
+range(d$count)
+
+ggplot(d, aes(x=reference, y=count)) + 
+  geom_point(position=position_jitter(w=0.1,h=0)) + 
+  scale_y_log10()
+```
+
+# 4 Batch correct 
+## 4.1 DESeq MF design
+Check for sample-wise effects? Usually it would be the poly vs ribo that is our batch effect. 
+```{r}
+colData(dds)
+ddsMF <- dds
+levels(ddsMF$supplier)
+
+design(ddsMF) <- formula(~ supplier + reference)
+ddsMF <- DESeq(ddsMF)
+```
+## 4.2 ComBat
+
+# 5 Data transformation 
+## 5.1 Run VST and rlog
+Count data transformations to remove dependent of the variance on the mean (variance high when mean is low)
+  - VST
+  - Log
+Blind dispersion estimation - should the transformation be blind about the design formula? Yes, in our case, because we expect the different to be minimal?
+```{r}
+vsd <- vst(dds, blind=TRUE)
+rld <- rlog(dds, blind=TRUE)
+head(assay(vsd), 3)
+
+vsd <- vst(dds, blind=TRUE)
+rld <- rlog(dds, blind=TRUE)
+head(assay(vsd), 3)
+```
+
+## 5.2 Data quality assessment
+### 5.2.1 Heatmaps of counts
+Index top N genes. 
+```{r}
+select <- order(rowMeans(counts(dds,normalized=TRUE)),
+                decreasing=TRUE)[1:20]
+df <- as.data.frame(colData(dds)[,c("condition","type")])
+pheatmap(assay(ntd)[select,], cluster_rows=FALSE, show_rownames=FALSE,
+         cluster_cols=FALSE, annotation_col=df)
+```
+
+### 5.2.2 Sample distance
+#### 5.2.2.1 Dds
+```{r}
+sampleDists <- dist(t(assay(dds)))
+
+sampleDistMatrix <- as.matrix(sampleDists)
+# rownames(sampleDistMatrix) <- vs
+# colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")) )(255)
+ddsSupplier <- pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+
+rownames(sampleDistMatrix) <- dds$reference
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(brewer.pal(9, "Blues") )(255)
+ddsReference <- pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+```
+#### 5.2.2.2 VST 
+```{r}
+sampleDistsVST <- dist(t(assay(vsd)))
+sampleDistMatrix <- as.matrix(sampleDistsVST)
+
+colors <- colorRampPalette(brewer.pal(9, "Reds") )(255)
+vsdSupplier <- pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDistsVST,
+         clustering_distance_cols=sampleDistsVST,
+         col=colors)
+
+rownames(sampleDistMatrix) <- vsd$reference
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(brewer.pal(9, "Reds") )(255)
+vsdReference <- pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDistsVST,
+         clustering_distance_cols=sampleDistsVST,
+         col=colors)
+
+```
+#### 5.2.2.3 rLog
+```{r}
+sampleDistsLog <- dist(t(assay(rld)))
+sampleDistMatrix <- as.matrix(sampleDistsLog)
+
+colors <- colorRampPalette(brewer.pal(9, "Purples") )(255)
+vsdSupplier <- pheatmap(sampleDistMatrix,
+                        
+         col=colors)
+
+rownames(sampleDistMatrix) <- vsd$reference
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(brewer.pal(9, "Purples") )(255)
+vsdReference <- pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDistsLog,
+         clustering_distance_cols=sampleDistsLog,
+         col=colors)
+```
+
+### 5.2.3 PCA
+#### 5.2.3.1 Vsd
+```{r}
+pcaDataVsd <- plotPCA(vsd, intgroup=c("reference", "supplier"), returnData=TRUE)
+percentVarVsd <- round(100 * attr(pcaDataVsd, "percentVar"))
+ggplot(pcaDataVsd, aes(PC1, PC2, color=supplier, shape=reference)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVarVsd[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVarVsd[2],"% variance")) + 
+  coord_fixed()
+```
+
+
+
+
+
+# 6 Data transformation, blind = F
+## 6.1 Run VST and rlog
+Count data transformations to remove dependent of the variance on the mean (variance high when mean is low)
+  - VST
+  - Log
+Blind dispersion estimation - should the transformation be blind about the design formula? Yes, in our case, because we expect the different to be minimal?
+```{r}
+vsd <- vst(dds, blind=TRUE)
+rld <- rlog(dds, blind=TRUE)
+```
+
+## 6.2 Data quality assessment
+### 6.2.1 Heatmaps of counts
+Index top N genes. 
+```{r}
+# select <- order(rowMeans(counts(dds,normalized=TRUE)),
+#                 decreasing=TRUE)[1:20]
+# df <- as.data.frame(colData(dds)[,c("condition","type")])
+# pheatmap(assay(ntd)[select,], cluster_rows=FALSE, show_rownames=FALSE,
+#          cluster_cols=FALSE, annotation_col=df)
+```
+
+### 6.2.2 Sample distance
+#### 6.2.2.1 Dds
+```{r}
+sampleDists <- dist(t(assay(dds)))
+
+sampleDistMatrix <- as.matrix(sampleDists)
+# rownames(sampleDistMatrix) <- vs
+# colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(rev(brewer.pal(9, "Blues")) )(255)
+ddsSupplier <- pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+
+rownames(sampleDistMatrix) <- dds$reference
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(brewer.pal(9, "Blues") )(255)
+ddsReference <- pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+```
+#### 6.2.2.2 VST 
+```{r}
+sampleDistsVST <- dist(t(assay(vsd)))
+sampleDistMatrix <- as.matrix(sampleDistsVST)
+
+colors <- colorRampPalette(brewer.pal(9, "Reds") )(255)
+vsdSupplier <- pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDistsVST,
+         clustering_distance_cols=sampleDistsVST,
+         col=colors)
+
+rownames(sampleDistMatrix) <- vsd$reference
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(brewer.pal(9, "Reds") )(255)
+vsdReference <- pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDistsVST,
+         clustering_distance_cols=sampleDistsVST,
+         col=colors)
+
+```
+#### 6.2.2.3 rLog
+```{r}
+sampleDistsLog <- dist(t(assay(rld)))
+sampleDistMatrix <- as.matrix(sampleDistsLog)
+
+colors <- colorRampPalette(brewer.pal(9, "Purples") )(255)
+vsdSupplier <- pheatmap(sampleDistMatrix,
+                        
+         col=colors)
+
+rownames(sampleDistMatrix) <- vsd$reference
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(brewer.pal(9, "Purples") )(255)
+vsdReference <- pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDistsLog,
+         clustering_distance_cols=sampleDistsLog,
+         col=colors)
+```
+
+### 6.2.3 PCA
+#### 6.2.3.1 VST
+With blind = T, variance only decreases in PC1 by 3%
+```{r}
+pcaDataVsd <- plotPCA(vsd, intgroup=c("reference", "supplier"), returnData=TRUE)
+percentVarVsd <- round(100 * attr(pcaDataVsd, "percentVar"))
+ggplot(pcaDataVsd, aes(PC1, PC2, color=supplier, shape=reference)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVarVsd[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVarVsd[2],"% variance")) + 
+  coord_fixed()
+```
+
+#### 6.2.3.1 rLog
+With blind = T, variance only decreases in PC1 by 3%
+```{r}
+pcaDataVsd <- plotPCA(vsd, intgroup=c("reference", "supplier"), returnData=TRUE)
+percentVarVsd <- round(100 * attr(pcaDataVsd, "percentVar"))
+ggplot(pcaDataVsd, aes(PC1, PC2, color=supplier, shape=reference)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVarVsd[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVarVsd[2],"% variance")) + 
+  coord_fixed()
+```
+
+# 7.0 Take TPM of counts
+Accounts for sequencing depth and gene length. Not for DE analysis. 
+Estimate gene length from gtf? --> org.Db
+```{r}
+m <- data.matrix(masterMat)
+tpm <- convertCounts(m, "TPM")
+
+dim(masterMat)
+
+```
+
+## 8.2 From https://github.com/LuChenLab/40Tcells/blob/master/scripts/Fig4b.R
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ 1)
+dds
+
+dds_EO <- dds[apply(assay(dds), 1, function(x){ sum(x > 10) > 3 }),] # Filter genes dim: 18140 42 
+rld_EO <- rlog(dds_EO, blind = FALSE)  # rlog
+vst_EO <- vst(dds_EO, blind = FALSE)
+
+## combat --> batch are alternating numbers corresponding to whether the data was polya or ribo. 
+modcombat = model.matrix(~1, data = coldata)
+batch = as.numeric(coldata$reference)
+combat_rld_EO = ComBat(dat=assay(rld_EO), batch = batch, mod= modcombat)
+
+##cluster
+colnames(combat_rld_EO) <- paste0(coldata$supplier, ".", coldata$reference)
+
+# pdf("EO_rlog_combat_dendrogram_rec2.pdf",width=13,height=12)
+fviz_dend(hcut(t(combat_rld_EO), k = 4, stand = TRUE), cex=0.7,
+          horiz=TRUE, color_labels_by_k=FALSE,label_cols="black",k_colors="black")
+
+
+# https://master.bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html
+
+dat  <- counts(dds, normalized = TRUE)
+idx  <- rowMeans(dat) > 1
+dat  <- dat[idx, ]
+
+mod  <- model.matrix(~ reference, colData(dds))
+mod0 <- model.matrix(~   1, colData(dds))
+
+
+combat_rld_EO = ComBat_seq(dat, batch = batch)
+
+#calculate principal components for the uncorrected data
+pca_combat_rld_EO = prcomp(combat_rld_EO)
+
+#pull PCA values out of the PCA object
+pca_combat_rld_EO = as.data.frame(pca_combat_rld_EO[2]$rotation)
+
+#assign labels to the data frame
+pca_combat_rld_EO[,"samples"] = coldata$supplier
+pca_combat_rld_EO[,"library"] = coldata$reference
+
+#plot the PCA
+#create a classic 2-dimension PCA plot (first two principal components) with conditions and library methods indicated
+# cols <- c("ribo" = "#481567FF", "polya" = "#1F968BFF")
+p4 = ggplot(data = pca_combat_rld_EO, aes(x = PC1, y = PC2, color = samples, shape = library))
+p4 = p4 + geom_point(size = 3)
+p4 = p4 + stat_ellipse(type = "norm", linetype = 2)
+p4 = p4 + labs(title = "PCA, RNA-seq counts for Ribo/PolyA samples (corrected data)", color = "Sample", shape="Library Method")
+p4
+
+
+```
+# 8 Design ~1
+https://rnabio.org/module-03-expression/0003/06/02/Batch-Correction/
+## 8.1 Following workflow
+### 8.1.1 Uncorrected data
+```{r}
+#calculate principal components for the uncorrected data
+pca_uncorrected_obj = prcomp(m)
+
+#pull PCA values out of the PCA object
+pca_uncorrected = as.data.frame(pca_uncorrected_obj[2]$rotation)
+
+#assign labels to the data frame
+pca_uncorrected[,"samples"] = coldata$supplier
+pca_uncorrected[,"library"] = coldata$reference
+
+#plot the PCA
+#create a classic 2-dimension PCA plot (first two principal components) with conditions and library methods indicated
+# cols <- c("ribo" = "#481567FF", "polya" = "#1F968BFF")
+p1 = ggplot(data = pca_uncorrected, aes(x = PC1, y = PC2, color = samples, shape = library))
+p1 = p1 + geom_point(size = 3)
+p1 = p1 + stat_ellipse(type = "norm", linetype = 2)
+p1 = p1 + labs(title = "PCA, RNA-seq counts for Ribo/PolyA samples (uncorrected data)", color = "Sample", shape="Library Method")
+p1
+
+```
+### 8.1.2 Corrected data
+```{r}
+corrected_data = ComBat_seq(counts = as.matrix(m), batch = coldata$reference)
+corrected_data_group = ComBat_seq(counts = as.matrix(m), batch = coldata$reference, group=coldata$supplier)
+
+#compare dimensions of corrected and uncorrected data sets
+dim(m)
+dim(corrected_data)
+dim(corrected_data_group)
+
+
+#visually compare values of corrected and uncorrected data sets
+head(m)
+head(corrected_data)
+head(corrected_data_group)
+
+
+#calculate principal components for the uncorrected data
+pca_corrected_obj = prcomp(corrected_data)
+
+#pull PCA values out of the PCA object
+pca_corrected = as.data.frame(pca_corrected_obj[2]$rotation)
+
+#assign labels to the data frame
+pca_corrected[,"samples"] = coldata$supplier
+pca_corrected[,"library"] = coldata$reference
+
+#plot the PCA
+#create a classic 2-dimension PCA plot (first two principal components) with conditions and library methods indicated
+# cols <- c("ribo" = "#481567FF", "polya" = "#1F968BFF")
+p2 = ggplot(data = pca_corrected, aes(x = PC1, y = PC2, color = samples, shape = library))
+p2 = p2 + geom_point(size = 3)
+p2 = p2 + stat_ellipse(type = "norm", linetype = 2)
+p2 = p2 + labs(title = "PCA, RNA-seq counts for Ribo/PolyA samples (corrected data)", color = "Sample", shape="Library Method")
+p2
+
+
+#calculate principal components for the uncorrectedGroup data
+pca_correctedGroup_obj = prcomp(corrected_data_group)
+
+#pull PCA values out of the PCA object
+pca_correctedGroup = as.data.frame(pca_correctedGroup_obj[2]$rotation)
+
+#assign labels to the data frame
+pca_correctedGroup[,"samples"] = coldata$supplier
+pca_correctedGroup[,"library"] = coldata$reference
+
+#plot the PCA
+#create a classic 2-dimension PCA plot (first two principal components) with conditions and library methods indicated
+# cols <- c("ribo" = "#481567FF", "polya" = "#1F968BFF")
+p3 = ggplot(data = pca_correctedGroup, aes(x = PC1, y = PC2, color = samples, shape = library))
+p3 = p3 + geom_point(size = 3)
+p3 = p3 + stat_ellipse(type = "norm", linetype = 2)
+p3 = p3 + labs(title = "PCA, RNA-seq counts for Ribo/PolyA samples (correctedGroup data)", color = "Sample", shape="Library Method")
+p3
+```
+
+# --- Specific questions
+# 2 DESEQ
+## 2.1 Model with sample and library prep information.
+### 2.1.1 PCA of results
+```{r}
+fromKevin <- read_table(paste0(dataDir, "samples_with_seq_data.tsv"))
+
+coldata <- fromKevin %>%
+  as.data.frame() %>%
+  mutate(reference=tolower(reference), 
+         Sample = paste0(supplier, ".",reference)) %>%
+  column_to_rownames("Sample") %>%
+  rename("supplier"="sampleID",
+         "reference"="library")
+  
+
+head(coldata)
+coldata$library <- factor(coldata$library)
+coldata$sampleID <- factor(coldata$sampleID)
+
+
+masterMat <- read.xlsx(paste0(resDir, "/", fprefix, "/", fprefix, "_masterMat.xlsx"), 
+                       rowNames = T)
+
+all(rownames(coldata) %in% colnames(masterMat))
+all(colnames(masterMat) %in% rownames(coldata))
+
+cts <- masterMat[, rownames(coldata)]
+all(rownames(coldata) == colnames(cts))
+
+
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ library+sampleID) # supplier = sample, reference = library prep
+
+dds$library <- factor(dds$library, levels = c("ribo","polya"))
+smallestGroupSize <- 3
+keep <- rowSums(counts(dds) >= 10) >= smallestGroupSize
+dds <- dds[keep,]
+colSums(counts(dds)) %>% barplot
+
+dds <- DESeq(dds) # used local regression iso parametric
+
+resultsNames(dds)
+
+res <- results(dds, contrast = c("library", 
+                                 "polya", 
+                                 "ribo"))
+summary(res)
+
+# out of 21883 with nonzero total read count
+# adjusted p-value < 0.1
+# LFC > 0 (up)       : 7907, 36%
+# LFC < 0 (down)     : 9508, 43%
+# outliers [1]       : 0, 0%
+# low counts [2]     : 0, 0%
+# (mean count < 1)
+# [1] see 'cooksCutoff' argument of ?results
+# [2] see 'independentFiltering' argument of ?results
+
+res2.5 <- results(dds, contrast = c("library", 
+                                 "polya", 
+                                 "ribo"),
+                  lfcThreshold = 2.5)
+
+# out of 21883 with nonzero total read count
+# adjusted p-value < 0.1
+# LFC > 2.50 (up)    : 179, 0.82%
+# LFC < -2.50 (down) : 745, 3.4%
+# outliers [1]       : 0, 0%
+# low counts [2]     : 0, 0%
+# (mean count < 1)
+# [1] see 'cooksCutoff' argument of ?results
+# [2] see 'independentFiltering' argument of ?results
+
+plotMA(res)
+
+vsd <- vst(dds)
+plotPCA(vsd, intgroup = "library") # ntop=500
+plotPCA(vst(dds, blind=F), intgroup = "library")
+
+```
+### 2.1.1 prcomp()
+```{r}
+# vsdCounts <- counts(vsd)
+normalized_counts <- counts(dds, normalized=TRUE) %>% 
+  # transpose the matrix so that rows = samples and columns = variables
+  t()
+pca <- prcomp(normalized_counts)
+```
+
+## 2.2 Are DEGs often longer?
+Maybe TPM is more useful here?
+```{r}
+gene_lengths_df <- masterDf %>%
+  select(c("Geneid", "Length"))
+res_df <- as.data.frame(res)
+res_df$Geneid <- rownames(res_df)
+merged <- merge(res_df, gene_lengths_df, by = "Geneid")
+# Define DEG groups
+merged$group <- "Not DEG"
+merged$group[merged$padj < 0.05 & abs(merged$log2FoldChange) > 0] <- "DEG_LFC_0"
+merged$group[merged$padj < 0.05 & abs(merged$log2FoldChange) > 2.5] <- "DEG_LFC_2.5"
+
+aggregate(Length ~ group, data = merged, summary)
+
+library(ggridges)
+
+ggplot(merged, aes(x = group, y = Length)) +
+  geom_boxplot(outlier.shape = NA) +
+  scale_y_log10() +  # gene lengths often log-skewed
+  labs(title = "Gene Lengths vs DEG Status",
+       y = "Gene Length (log10 scale)",
+       x = "Group") +
+  theme_minimal()
+
+wilcox.test(Length ~ group, data = subset(merged, group %in% c("NotDE", "DEG_LFC_0")))
+wilcox.test(Length ~ group, data = subset(merged, group %in% c("NotDE", "DEG_LFC_2.5")))
+
+ggplot(merged, aes(x = log10(Length), y = group, fill = group)) +
+  geom_density_ridges(alpha = 0.7, scale = 1.2) +
+  labs(
+    title = "Distribution of Gene Lengths by DEG Group",
+    x = "Gene Length (log10)",
+    y = "Group"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+ggplot(merged, aes(x = log10(Length), fill = group)) +
+  geom_histogram(alpha = 0.6, bins = 50, position = "identity") +
+  labs(
+    title = "Histogram of Gene Lengths by DEG Group",
+    x = "Gene Length (log10)",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+## 2.3 What biotypes do the DEGs have?
+
