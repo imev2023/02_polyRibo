@@ -4,7 +4,7 @@
 #BSUB -R "select[mem>3.5GB] rusage[mem=3.5GB] span[hosts=1]"
 #BSUB -n 4 # CPU's
 #BSUB -q normal # Queue (n=normal, l=long)
-#BSUB -J nv4fC
+#BSUB -J nv4infExp
 #BSUB -o /lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/023_Results/Logs/02_polyRibo_rseQC_inferExp_qNormal_m3.5GB_n4.log
 #BSUB -e /lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/023_Results/Logs/02_polyRibo_rseQC_inferExp_qNormal_m3.5GB_n4.err
 

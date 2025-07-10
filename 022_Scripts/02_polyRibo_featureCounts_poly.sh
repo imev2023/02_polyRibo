@@ -3,10 +3,10 @@
 #BSUB -M 3.5GB # Memory
 #BSUB -R "select[mem>3.5GB] rusage[mem=3.5GB] span[hosts=1]"
 #BSUB -n 4 # CPU's
-#BSUB -q long # Queue (n=normal, l=long)
+#BSUB -q normal # Queue (n=normal, l=long)
 #BSUB -J nv4fCpoly
-#BSUB -o /lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/023_Results/Logs/02_polyRibo_featureCounts_poly_qLong_m3.5G_n4.log
-#BSUB -e /lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/023_Results/Logs/02_polyRibo_featureCounts_poly_qLong_m3.5G_n4.err
+#BSUB -o /lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/023_Results/Logs/02_polyRibo_featureCounts_poly_qNormal_m3.5G_n4.log
+#BSUB -e /lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/023_Results/Logs/02_polyRibo_featureCounts_poly_qNormal_m3.5G_n4.err
 
 # run this from nv4/ --> bsub -G team267-grp < ./02_polyRibo/022_Scripts/02_polyRibo_featureCounts_poly.sh
 
@@ -25,6 +25,8 @@ NFSDIR_POLY="/nfs/users/nfs_n/nv4/02_polyRibo/023_Results/02_polyRibo_featureCou
 
 # Confirmed with Kevin. 
 GTF="/lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/021_Data/Canis_lupus_familiaris.CanFam3.1.104.gtf"
+
+NEW_DATADIR_POLY="/lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/021_Data/bam/polya/"
 
 # for riboFile in $DATADIR_RIBO/*.cram
 # do
@@ -49,32 +51,29 @@ GTF="/lustre/scratch125/casm/staging/team267_murchison/nv4/02_polyRibo/021_Data/
 
 # done
 
-for polyFile in $DATADIR_POLY/*.cram
+for polyFile in $NEW_DATADIR_POLY/*.bam
 do
     # Extract file name, without .cram. 
-    polyName=$(basename $polyFile .cram) 
+    polyName=$(basename $polyFile .bam) 
 
     # Set temporary subdirectory per cram file. 
     TEMP_RESDIR_POLY="$RESDIR_POLY/$polyName/"
     # Create a subdirectory per cram file, this will not overwrite any existing directories.
-    mkdir $TEMP_RESDIR_POLY
+    # mkdir $TEMP_RESDIR_POLY
 
     TEMP_NFSDIR_POLY="$NFSDIR_POLY/$polyName/"
-    mkdir $TEMP_NFSDIR_POLY
+    # mkdir $TEMP_NFSDIR_POLY
 
     echo "Processing $polyName"
     # featureCounts is a lot faster than htseq, but requires bam rather than cram files. Bam files take up more space so creating and deleting within the loop.  
-    samtools sort -@ 4 -m 500M -O bam -o "$DATADIR_POLY/$polyName.bam" $polyFile #
+    # samtools sort -@ 4 -m 500M -O bam -o "$DATADIR_POLY/$polyName.bam" $polyFile #
 
     # run featureCounts two ways. This is assuming -stranded = reverse, following Maurine's seq. Confirmed with Kevin. 
     # T = threads, -o = output, -s stranded (2 for reverse), -f performs read counting at exon level rather than genes. -R assignment results per read/read-pair, saved in -o. 
-    featureCounts -T 4 -o "$TEMP_RESDIR_POLY/02_polyRibo_featureCounts_s2_$polyName" -p -s 2 --extraAttributes "gene_id" -a $GTF "$DATADIR_POLY/$polyName.bam"
-    featureCounts -T 4 -f -o "$TEMP_RESDIR_POLY/02_polyRibo_featureCounts_fs2_$polyName" -p -s 2 --extraAttributes "gene_id" -a $GTF "$DATADIR_POLY/$polyName.bam" 
-
-    # remove .bam file intermediate for space. 
-    rm -f "$DATADIR_POLY/$polyName.bam"
+    # featureCounts -T 4 -o "$TEMP_RESDIR_POLY/02_polyRibo_featureCounts_s2_$polyName" -p -s 2 --extraAttributes "gene_id" -a $GTF "$DATADIR_POLY/$polyName.bam"
+    featureCounts -T 4 -f -O -o "$TEMP_RESDIR_POLY/02_polyRibo_featureCounts_fs2O_$polyName" -p -s 2 --extraAttributes "gene_id" -a $GTF "$NEW_DATADIR_POLY/$polyName.bam" 
 
     # copy files from Lustre to NFS. 
-    cp -r $TEMP_RESDIR_POLY/* $TEMP_NFSDIR_POLY/
+    cp -r $TEMP_RESDIR_POLY/02_polyRibo_featureCounts_fs2O_$polyName $TEMP_NFSDIR_POLY/
 
 done
